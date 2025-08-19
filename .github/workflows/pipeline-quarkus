@@ -1,0 +1,57 @@
+name: CI/CD Pipeline Quarkus Local
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  checkout:
+    name: Checkout do Código
+    runs-on: self-hosted
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v3
+
+  build:
+    name: Build da Aplicação Quarkus
+    runs-on: self-hosted
+    needs: checkout
+    steps:
+      - name: Setup JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build com Maven
+        run: mvn clean package -DskipTests
+
+  deploy-dev:
+    name: Deploy em Desenvolvimento
+    runs-on: self-hosted
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Autenticar no cluster Kubernetes DEV
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_DEV }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Aplicar manifestos no ambiente DEV
+        run: kubectl apply -f k8s/dev/
+
+  deploy-prod:
+    name: Deploy em Produção
+    runs-on: self-hosted
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Autenticar no cluster Kubernetes PROD
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Aplicar manifestos no ambiente PROD
+        run: kubectl apply -f k8s/prod/
