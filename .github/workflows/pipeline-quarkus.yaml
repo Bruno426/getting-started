@@ -1,4 +1,4 @@
-name: CI/CD Pipeline Quarkus Local
+name: CI/CD Pipeline Quarkus
 
 on:
   push:
@@ -9,14 +9,14 @@ on:
 jobs:
   checkout:
     name: Checkout do Código
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v3
 
   build:
     name: Build da Aplicação Quarkus
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: checkout
     steps:
       - name: Setup JDK
@@ -26,32 +26,41 @@ jobs:
           distribution: 'temurin'
 
       - name: Build com Maven
-        run: mvn clean package -DskipTests
+        run: ./mvnw clean package -DskipTests
+
+      - name: Build Imagem Docker
+        run: docker build -t brunodacaixa/quarkus-app:latest -f kubernetes/Dockerfile .
+
+      - name: Docker Login
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Enviando Imagem pro Docker Hub
+        run: docker push brunodacaixa/quarkus-app:latest
 
   deploy-dev:
     name: Deploy em Desenvolvimento
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/develop'
     steps:
-      - name: Autenticar no cluster Kubernetes DEV
+      - name: Autenticar no cluster K8S namespace de DES
         run: |
           echo "${{ secrets.KUBE_CONFIG_DEV }}" > kubeconfig
           export KUBECONFIG=kubeconfig
 
-      - name: Aplicar manifestos no ambiente DEV
-        run: kubectl apply -f k8s/dev/
+      - name: Aplicar manifestos no namespace de DES
+        run: kubectl apply -f kubernetes/deployment-des.yaml
 
   deploy-prod:
     name: Deploy em Produção
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
     steps:
-      - name: Autenticar no cluster Kubernetes PROD
+      - name: Autenticar no cluster K8S namespace de PROD
         run: |
           echo "${{ secrets.KUBE_CONFIG_PROD }}" > kubeconfig
           export KUBECONFIG=kubeconfig
 
-      - name: Aplicar manifestos no ambiente PROD
-        run: kubectl apply -f k8s/prod/
+      - name: Aplicar manifestos no namespace PROD
+        run: kubectl apply -f kubernetes/deployment-prd.yaml
